@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User Rules
+    function isValidUser(data) {
+      return data.keys().hasAll(['createdAt', 'updatedAt']) &&
+             data.createdAt is number &&
+             data.updatedAt is number &&
+             (!('telegramChatId' in data) || (data.telegramChatId is string && data.telegramChatId.size() <= 50));
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && isValidId(userId) && request.auth.uid == userId && isValidUser(incoming()) && incoming().keys().size() <= 3 && incoming().createdAt == request.time.toMillis() && incoming().updatedAt == request.time.toMillis();
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['telegramChatId', 'updatedAt']) && incoming().updatedAt == request.time.toMillis() && incoming().createdAt == existing().createdAt;
+    }
+
+    // Transaction Rules
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'desc', 'category', 'amount', 'date', 'type', 'createdAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.desc is string && data.desc.size() > 0 && data.desc.size() <= 200 &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.amount is number &&
+             data.date is string && data.date.size() <= 20 &&
+             data.type is string && (data.type == 'income' || data.type == 'expense') &&
+             data.createdAt is number;
+    }
+
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && isValidId(transactionId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(transactionId) && isValidTransaction(incoming()) && incoming().keys().size() == 7 && incoming().createdAt == request.time.toMillis() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(transactionId) && existing().userId == request.auth.uid && isValidTransaction(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['desc', 'category', 'amount', 'date', 'type']) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(transactionId) && existing().userId == request.auth.uid;
+    }
+
+    // Reminder Rules
+    function isValidReminder(data) {
+      return data.keys().hasAll(['userId', 'title', 'amount', 'frequency', 'nextDate', 'isActive', 'createdAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 100 &&
+             data.amount is number &&
+             data.frequency is string && data.frequency.size() > 0 && data.frequency.size() <= 50 &&
+             data.nextDate is string && data.nextDate.size() <= 50 &&
+             data.isActive is bool &&
+             data.createdAt is number;
+    }
+
+    match /reminders/{reminderId} {
+      allow get: if isSignedIn() && isValidId(reminderId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(reminderId) && isValidReminder(incoming()) && incoming().keys().size() == 7 && incoming().createdAt == request.time.toMillis() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(reminderId) && existing().userId == request.auth.uid && isValidReminder(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'frequency', 'nextDate', 'isActive']) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(reminderId) && existing().userId == request.auth.uid;
+    }
+    // Category Rules
+    function isValidCategory(data) {
+      return data.keys().hasAll(['userId', 'name', 'type', 'createdAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 50 &&
+             data.type is string && (data.type == 'income' || data.type == 'expense') &&
+             data.createdAt is number;
+    }
+
+    match /categories/{categoryId} {
+      allow get: if isSignedIn() && isValidId(categoryId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(categoryId) && isValidCategory(incoming()) && incoming().keys().size() == 4 && incoming().createdAt == request.time.toMillis() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(categoryId) && existing().userId == request.auth.uid && isValidCategory(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type']) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(categoryId) && existing().userId == request.auth.uid;
+    }
+
+    // Budget Rules
+    function isValidBudget(data) {
+      return data.keys().hasAll(['userId', 'category', 'amount', 'month', 'createdAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.category is string && data.category.size() > 0 && data.category.size() <= 50 &&
+             data.amount is number &&
+             data.month is string && data.month.size() <= 7 &&
+             data.createdAt is number;
+    }
+
+    match /budgets/{budgetId} {
+      allow get: if isSignedIn() && isValidId(budgetId) && existing().userId == request.auth.uid;
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(budgetId) && isValidBudget(incoming()) && incoming().keys().size() == 5 && incoming().createdAt == request.time.toMillis() && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(budgetId) && existing().userId == request.auth.uid && isValidBudget(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'month']) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if isSignedIn() && isValidId(budgetId) && existing().userId == request.auth.uid;
+    }
+  }
+}
