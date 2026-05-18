@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(npx firebase *)",
+      "Bash(firebase --version)",
+      "Bash(npm list *)",
+      "Bash(node run-tests.js)",
+      "Bash(java -version)",
+      "Bash(node -e \"console.log\\('Node OK'\\)\")",
+      "Bash(firebase emulators:start --only firestore)",
+      "Read(//c/Program Files/**)",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\Eclipse Adoptium\" -ErrorAction SilentlyContinue | Select-Object Name, FullName; echo \"---\"; Get-ChildItem \"C:\\\\Program Files\\\\Java\" -ErrorAction SilentlyContinue | Select-Object Name, FullName; echo \"---\"; where.exe java; echo \"---JAVA_HOME: $env:JAVA_HOME\")",
+      "Bash(ls -la \"/c/Program Files/Eclipse Adoptium/\" 2>/dev/null; echo \"---\"; ls -la \"/c/Program Files/Java/\" 2>/dev/null; echo \"---\"; ls -la \"/c/ProgramData/chocolatey/lib/\" 2>/dev/null | grep -i java)",
+      "Read(//c/ProgramData/chocolatey/lib//**)"
+    ]
+  }
+}

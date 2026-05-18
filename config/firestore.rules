@@ -1,0 +1,198 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // -------------------------------------------------------------
+    // PHASE 0: DEFAULT DENY (The Global Safety Net)
+    // -------------------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Global Helpers (Primitive Definition)
+    // -------------------------------------------------------------
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // A valid ID must be short and alphanumeric
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    // -------------------------------------------------------------
+    // Entity Validations (The Blueprints)
+    // -------------------------------------------------------------
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['telegramChatId', 'createdAt'])
+        && data.keys().size() <= 3 // allows updatedAt
+        && data.telegramChatId is string
+        && data.telegramChatId.size() <= 50
+        && data.createdAt is number;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['userId', 'desc', 'category', 'amount', 'date', 'type', 'createdAt'])
+        && data.keys().size() == 7
+        && data.userId is string && data.userId == request.auth.uid
+        && data.desc is string && data.desc.size() <= 1000
+        && data.category is string && data.category.size() <= 50
+        && data.amount is number
+        && data.date is string && data.date.size() <= 20
+        && data.type in ['income', 'expense']
+        && data.createdAt is number;
+    }
+
+    function isValidReminder(data) {
+      return data.keys().hasAll(['userId', 'title', 'amount', 'frequency', 'nextDate', 'isActive', 'createdAt'])
+        && data.keys().size() <= 8
+        && data.userId is string && data.userId == request.auth.uid
+        && data.title is string && data.title.size() <= 100
+        && data.amount is number
+        && data.frequency is string && data.frequency.size() <= 20
+        && data.nextDate is string && data.nextDate.size() <= 20
+        && data.isActive is bool
+        && data.createdAt is number;
+    }
+    
+    function isValidCategory(data) {
+      return data.keys().hasAll(['userId', 'name', 'type', 'createdAt'])
+        && data.keys().size() == 4
+        && data.userId is string && data.userId == request.auth.uid
+        && data.name is string && data.name.size() <= 50
+        && data.type in ['income', 'expense']
+        && data.createdAt is number;
+    }
+    
+    function isValidBudget(data) {
+      return data.keys().hasAll(['userId', 'category', 'amount', 'month', 'createdAt'])
+        && data.keys().size() == 5
+        && data.userId is string && data.userId == request.auth.uid
+        && data.category is string && data.category.size() <= 50
+        && data.amount is number
+        && data.month is string && data.month.size() <= 20
+        && data.createdAt is number;
+    }
+
+    // -------------------------------------------------------------
+    // Route Handlers
+    // -------------------------------------------------------------
+
+    // 1. Users Profile
+    match /users/{userId} {
+      allow get: if isSignedIn() && request.auth.uid == userId;
+      // No standard user profile listing allowed
+      allow list: if false; 
+      
+      allow create: if isSignedIn() 
+        && request.auth.uid == userId 
+        && isValidUser(incoming());
+        
+      allow update: if isSignedIn() 
+        && request.auth.uid == userId 
+        && isValidUser(incoming())
+        // Immutable keys
+        && incoming().createdAt == existing().createdAt
+        // Check update keys
+        && incoming().diff(existing()).affectedKeys().hasOnly(['telegramChatId', 'updatedAt']);
+        
+      // App doesn't require deleting users from client side
+      allow delete: if false; 
+    }
+
+    // 2. Transactions
+    match /transactions/{transactionId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(transactionId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn()
+        && isValidId(transactionId)
+        && isValidTransaction(incoming())
+        // Relational Sync Guard: Master user must exist
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && isValidTransaction(incoming())
+        // Immortal Field
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        // Which fields change?
+        && incoming().diff(existing()).affectedKeys().hasOnly(['desc', 'category', 'amount', 'date', 'type']);
+        
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // 3. Reminders
+    match /reminders/{reminderId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(reminderId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn()
+        && isValidId(reminderId)
+        && isValidReminder(incoming())
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && isValidReminder(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'amount', 'frequency', 'nextDate', 'isActive']);
+        
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+    
+    // 4. Categories
+    match /categories/{categoryId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(categoryId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn()
+        && isValidId(categoryId)
+        && isValidCategory(incoming())
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && isValidCategory(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type']);
+        
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+    
+    // 5. Budgets
+    match /budgets/{budgetId} {
+      allow get: if isSignedIn() && existing().userId == request.auth.uid && isValidId(budgetId);
+      allow list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      allow create: if isSignedIn()
+        && isValidId(budgetId)
+        && isValidBudget(incoming())
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+        
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && isValidBudget(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && incoming().diff(existing()).affectedKeys().hasOnly(['category', 'amount', 'month']);
+        
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+    
+  }
+}
