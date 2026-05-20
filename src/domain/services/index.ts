@@ -5,14 +5,14 @@
 
 import {
   Transaction,
-  TransactionType,
-} from './entities';
+} from '../entities';
 import {
+  TransactionType,
   Money,
   DateRange,
   Percentage,
   TransactionFilter,
-} from './value-objects';
+} from '../value-objects';
 
 // ============================================================
 // BALANCE CALCULATION SERVICE

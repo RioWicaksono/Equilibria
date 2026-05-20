@@ -1,6 +1,6 @@
 /**
  * Firebase Configuration - Infrastructure Layer
- * Handles Firebase client and admin initialization
+ * Handles Firebase client initialization
  */
 
 import { initializeApp, FirebaseApp } from 'firebase/app';
@@ -17,19 +17,6 @@ export interface FirebaseConfig {
   appId: string;
   measurementId?: string;
   firestoreDatabaseId?: string;
-}
-
-// Load config from JSON file
-function loadConfig(): FirebaseConfig | null {
-  try {
-    // Dynamic import for ESM
-    const configPath = new URL('../../../firebase-applet-config.json', import.meta.url);
-    const response = await fetch(configPath);
-    return response.json();
-  } catch (error) {
-    console.error('Failed to load firebase config:', error);
-    return null;
-  }
 }
 
 // Lazy initialization

@@ -3,7 +3,7 @@
  * These represent the core concepts of the Equilibria domain
  */
 
-import { TransactionType, ReminderFrequency } from './value-objects';
+import { TransactionType, ReminderFrequency } from '../value-objects';
 
 // ============================================================
 // BASE ENTITY

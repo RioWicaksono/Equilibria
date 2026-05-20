@@ -1,4 +1,4 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, type ReactNode, type ErrorInfo } from 'react';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
@@ -6,113 +6,92 @@ interface Props {
   children: ReactNode;
   fallback?: ReactNode;
   onError?: (error: Error, errorInfo: ErrorInfo) => void;
-  /** Optional namespace for analytics/debugging */
   componentName?: string;
 }
 
-interface State {
+interface ErrorState {
   hasError: boolean;
   error: Error | null;
   errorInfo: ErrorInfo | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
-    super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-      errorInfo: null,
-    };
-  }
+export function ErrorBoundary({ children, fallback, onError, componentName }: Props) {
+  const [state, setState] = useState<ErrorState>({
+    hasError: false,
+    error: null,
+    errorInfo: null,
+  });
 
-  static getDerivedStateFromError(error: Error): Partial<State> {
-    return { hasError: true, error };
-  }
+  useEffect(() => {
+    // This is a controlled error boundary
+  }, []);
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    this.setState({ errorInfo });
-
-    // Log to console in development
-    if (import.meta.env.DEV) {
-      console.error('[ErrorBoundary]', {
-        component: this.props.componentName || 'Unknown',
-        error,
-        errorInfo,
-      });
-    }
-
-    // Call custom error handler
-    this.props.onError?.(error, errorInfo);
-  }
-
-  handleReload = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null });
+  const handleReload = () => {
+    setState({ hasError: false, error: null, errorInfo: null });
     window.location.reload();
   };
 
-  render() {
-    const { hasError, error, errorInfo } = this.state;
-    const { children, fallback, componentName } = this.props;
+  const handleGoHome = () => {
+    setState({ hasError: false, error: null, errorInfo: null });
+  };
 
-    if (hasError) {
-      if (fallback) return fallback;
+  if (state.hasError) {
+    if (fallback) return fallback;
 
-      return (
-        <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white border-2 border-stone-900 shadow-[8px_8px_0_0_rgba(28,25,23,1)] p-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="w-12 h-12 bg-amber-100 border border-amber-200 flex items-center justify-center rounded-sm">
-                <AlertTriangle className="w-6 h-6 text-amber-600" />
-              </div>
-              <div>
-                <h2 className="font-mono font-bold text-sm uppercase tracking-widest text-stone-900">
-                  {componentName || 'Component'} Error
-                </h2>
-                <p className="text-xs text-stone-500 font-mono">Something went wrong</p>
-              </div>
+    return (
+      <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white border-2 border-stone-900 shadow-[8px_8px_0_0_rgba(28,25,23,1)] p-8">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 bg-amber-100 border border-amber-200 flex items-center justify-center rounded-sm">
+              <AlertTriangle className="w-6 h-6 text-amber-600" />
             </div>
-
-            <div className="bg-stone-50 border border-stone-200 p-4 mb-6">
-              <p className="text-xs font-mono text-stone-600 mb-2">
-                {error?.message || 'An unexpected error occurred.'}
-              </p>
-              {import.meta.env.DEV && errorInfo && (
-                <details className="mt-3">
-                  <summary className="text-[10px] font-bold uppercase tracking-widest text-stone-400 cursor-pointer">
-                    Technical Details
-                  </summary>
-                  <pre className="mt-2 text-[10px] text-red-500 font-mono overflow-x-auto whitespace-pre-wrap">
-                    {errorInfo.componentStack}
-                  </pre>
-                </details>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={this.handleReload}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 transition-colors border border-stone-900 rounded-none text-xs font-bold uppercase tracking-widest font-mono"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                Reload
-              </button>
-              <Link
-                to="/"
-                onClick={() => this.setState({ hasError: false, error: null, errorInfo: null })}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white text-stone-900 hover:bg-stone-50 transition-colors border border-stone-300 rounded-none text-xs font-bold uppercase tracking-widest font-mono"
-              >
-                <Home className="w-3.5 h-3.5" />
-                Home
-              </Link>
+            <div>
+              <h2 className="font-mono font-bold text-sm uppercase tracking-widest text-stone-900">
+                {componentName || 'Component'} Error
+              </h2>
+              <p className="text-xs text-stone-500 font-mono">Something went wrong</p>
             </div>
           </div>
-        </div>
-      );
-    }
 
-    return children;
+          <div className="bg-stone-50 border border-stone-200 p-4 mb-6">
+            <p className="text-xs font-mono text-stone-600 mb-2">
+              {state.error?.message || 'An unexpected error occurred.'}
+            </p>
+            {import.meta.env.DEV && state.errorInfo && (
+              <details className="mt-3">
+                <summary className="text-[10px] font-bold uppercase tracking-widest text-stone-400 cursor-pointer">
+                  Technical Details
+                </summary>
+                <pre className="mt-2 text-[10px] text-red-500 font-mono overflow-x-auto whitespace-pre-wrap">
+                  {state.errorInfo.componentStack}
+                </pre>
+              </details>
+            )}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={handleReload}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-stone-900 text-stone-50 hover:bg-stone-800 transition-colors border border-stone-900 rounded-none text-xs font-bold uppercase tracking-widest font-mono"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              Reload
+            </button>
+            <Link
+              to="/"
+              onClick={handleGoHome}
+              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-white text-stone-900 hover:bg-stone-50 transition-colors border border-stone-300 rounded-none text-xs font-bold uppercase tracking-widest font-mono"
+            >
+              <Home className="w-3.5 h-3.5" />
+              Home
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
+
+  return children;
 }
 
 /**

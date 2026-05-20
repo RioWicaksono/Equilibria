@@ -40,7 +40,7 @@ import {
   IReminderRepository,
   ICategoryRepository,
   IBudgetRepository,
-} from './repositories';
+} from './index';
 import { getFirebaseFirestore } from '../firebase/config';
 
 // ============================================================
