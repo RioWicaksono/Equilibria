@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { Routes, Route, Link, useLocation } from 'react-router-dom';
 import {
   Wallet, ArrowUpRight, ArrowDownRight, Bell, Plus,
   Search, LayoutDashboard, CreditCard, Settings, LogOut,
   Calendar as CalendarIcon, MessageCircle, Trash2,
-  PieChart, LayoutList, Download, AlertCircle
+  PieChart, LayoutList, Download, AlertCircle, Menu, X,
+  Edit2, Check
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
-import { Card } from '@/components/ui/card';
 import { Calendar } from '@/components/ui/calendar';
+import { Card } from '@/components/ui/card';
 import {
   Table,
   TableBody,
@@ -30,7 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label';
+import { Label } from "@/components/ui/label";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer } from 'recharts';
 
 import { auth, db, googleProvider } from './lib/firebase';
@@ -93,6 +94,19 @@ export default function App() {
     type: 'all'
   });
 
+  // Dev mode state
+  const [devMode, setDevMode] = useState(false);
+  const [devEmail, setDevEmail] = useState('');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Edit transaction state
+  const [editingTxId, setEditingTxId] = useState<string | null>(null);
+  const [editingTxForm, setEditingTxForm] = useState({ desc: '', amount: '', category: '', type: 'expense' });
+
+  // Quick stats filter
+  const [statsPeriod, setStatsPeriod] = useState<'week' | 'month' | 'all'>('all');
+
   const uniqueTxCategories = Array.from(new Set(transactions.map(tx => tx.category))).sort();
 
   const filteredTransactions = transactions.filter(tx => {
@@ -100,13 +114,18 @@ export default function App() {
     let dateToPass = true;
     let categoryPass = true;
     let typePass = true;
-    
+    let searchPass = true;
+
     if (txFilters.dateFrom) dateFromPass = tx.date >= txFilters.dateFrom;
     if (txFilters.dateTo) dateToPass = tx.date <= txFilters.dateTo;
     if (txFilters.category && txFilters.category !== 'all') categoryPass = tx.category === txFilters.category;
     if (txFilters.type && txFilters.type !== 'all') typePass = tx.type === txFilters.type;
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      searchPass = tx.desc.toLowerCase().includes(query) || tx.category.toLowerCase().includes(query);
+    }
 
-    return dateFromPass && dateToPass && categoryPass && typePass;
+    return dateFromPass && dateToPass && categoryPass && typePass && searchPass;
   });
 
 
@@ -127,6 +146,11 @@ export default function App() {
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (currUser) => {
+      // Skip Firebase auth if in dev mode
+      if (devMode) {
+        setAuthLoading(false);
+        return;
+      }
       setUser(currUser);
       setAuthLoading(false);
       
@@ -206,7 +230,23 @@ export default function App() {
   };
 
   const handleLogout = async () => {
-    await signOut(auth);
+    if (devMode) {
+      // Dev mode logout
+      setUser(null);
+      setDevMode(false);
+      setDevEmail('');
+    } else {
+      await signOut(auth);
+    }
+  };
+
+  const handleDevLogin = () => {
+    const mockUser = {
+      uid: 'dev-user-' + Date.now(),
+      email: devEmail || 'dev@localhost',
+      displayName: devEmail?.split('@')[0] || 'Developer',
+    } as User;
+    setUser(mockUser);
   };
 
   const handleOpenAddReminder = (date?: Date) => {
@@ -265,6 +305,44 @@ export default function App() {
       await deleteDoc(doc(db, 'reminders', id));
     } catch(error) {
       handleFirestoreError(error, OperationType.DELETE, 'reminders', auth);
+    }
+  };
+
+  // Transaction CRUD operations
+  const handleEditTransaction = (tx: any) => {
+    setEditingTxId(tx.id);
+    setEditingTxForm({
+      desc: tx.desc,
+      amount: Math.abs(tx.amount).toString(),
+      category: tx.category,
+      type: tx.type
+    });
+  };
+
+  const handleUpdateTransaction = async () => {
+    if (!editingTxId || !editingTxForm.desc || !editingTxForm.amount || !user) return;
+    try {
+      const dbAmount = editingTxForm.type === 'expense'
+        ? -Math.abs(Number(editingTxForm.amount))
+        : Math.abs(Number(editingTxForm.amount));
+      await updateDoc(doc(db, 'transactions', editingTxId), {
+        desc: editingTxForm.desc,
+        amount: dbAmount,
+        category: editingTxForm.category,
+        type: editingTxForm.type,
+        updatedAt: Date.now()
+      });
+      setEditingTxId(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, 'transactions', auth);
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'transactions', id));
+    } catch(error) {
+      handleFirestoreError(error, OperationType.DELETE, 'transactions', auth);
     }
   };
 
@@ -362,6 +440,35 @@ export default function App() {
              <Button onClick={handleLogin} className="w-full h-12 rounded-none border-2 border-stone-900 text-sm font-bold uppercase tracking-widest font-mono">
                 Log In with Google
              </Button>
+
+             {/* Dev Mode Toggle */}
+             <div className="text-center">
+               <button
+                 onClick={() => setDevMode(!devMode)}
+                 className="text-xs text-stone-400 hover:text-stone-600 underline"
+               >
+                 {devMode ? 'Hide Dev Mode' : 'Dev Mode'}
+               </button>
+
+               {devMode && (
+                 <div className="mt-4 p-4 bg-stone-50 border border-stone-200 space-y-3">
+                   <p className="text-[10px] text-amber-600 font-mono uppercase">Development Mode - Skip Firebase Auth</p>
+                   <Input
+                     type="email"
+                     placeholder="dev@example.com"
+                     value={devEmail}
+                     onChange={(e) => setDevEmail(e.target.value)}
+                     className="rounded-none border-stone-900 text-xs"
+                   />
+                   <Button
+                     onClick={handleDevLogin}
+                     className="w-full h-10 rounded-none border border-stone-600 text-xs font-bold uppercase font-mono bg-stone-800 text-stone-50 hover:bg-stone-700"
+                   >
+                     Enter Dev Mode
+                   </Button>
+                 </div>
+               )}
+             </div>
           </div>
        </div>
      )
@@ -369,9 +476,28 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-stone-100 text-stone-900 font-sans overflow-hidden selection:bg-stone-200">
-      
+
+      {/* Mobile Header */}
+      <header className="h-14 bg-stone-950 border-b border-stone-800 flex items-center justify-between px-4 md:hidden fixed top-0 left-0 right-0 z-50">
+        <div className="flex items-center gap-2 font-bold text-sm tracking-widest text-stone-50 uppercase">
+          <img src="/favicon.svg" alt="Logo" className="w-5 h-5 border border-stone-800" />
+          <span>Equilibria</span>
+        </div>
+        <button
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="p-2 text-stone-400 hover:text-stone-50"
+        >
+          {isMobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+        </button>
+      </header>
+
+      {/* Mobile Menu Overlay */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsMobileMenuOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-stone-950 border-r border-stone-800 flex flex-col hidden md:flex">
+      <aside className={`w-64 bg-stone-950 border-r border-stone-800 flex flex-col fixed md:static inset-y-0 left-0 z-50 transform transition-transform duration-200 ease-in-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0`}>
         <div className="h-16 flex items-center px-6 border-b border-stone-800">
           <div className="flex items-center gap-3 font-bold text-lg tracking-widest text-stone-50 uppercase">
             <img src="/favicon.svg" alt="Equilibria Logo" className="w-6 h-6 border border-stone-800" />
@@ -397,15 +523,17 @@ export default function App() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden pt-14 md:pt-0">
         {/* Header */}
         <header className="h-16 bg-white border-b-2 border-stone-900 flex items-center justify-between px-6 lg:px-8 shrink-0">
           <div className="flex items-center gap-4 flex-1">
-            <div className="relative w-full max-w-md hidden sm:block">
+            <div className="relative w-full max-w-md">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
-              <input 
-                type="text" 
-                placeholder="SEARCH TRANSACTIONS..." 
+              <input
+                type="text"
+                placeholder="SEARCH TRANSACTIONS..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2 bg-stone-100 border-none rounded-none text-xs tracking-wider focus:ring-1 focus:ring-stone-900 outline-none uppercase font-mono placeholder:text-stone-400"
               />
             </div>
@@ -470,37 +598,56 @@ export default function App() {
           <Routes>
             <Route path="/" element={
               <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                {/* Header with Period Selector */}
+                <div className="flex items-center justify-between">
+                  <h2 className="text-xl font-bold font-mono tracking-widest text-stone-900 uppercase">Dashboard</h2>
+                  <div className="flex gap-2">
+                    <button onClick={() => setStatsPeriod('week')} className={cn(
+                      "px-3 py-1.5 text-xs font-bold uppercase tracking-widest font-mono rounded-none border",
+                      statsPeriod === 'week' ? "bg-stone-900 text-stone-50 border-stone-900" : "bg-white text-stone-500 border-stone-300 hover:border-stone-900"
+                    )}>Week</button>
+                    <button onClick={() => setStatsPeriod('month')} className={cn(
+                      "px-3 py-1.5 text-xs font-bold uppercase tracking-widest font-mono rounded-none border",
+                      statsPeriod === 'month' ? "bg-stone-900 text-stone-50 border-stone-900" : "bg-white text-stone-500 border-stone-300 hover:border-stone-900"
+                    )}>Month</button>
+                    <button onClick={() => setStatsPeriod('all')} className={cn(
+                      "px-3 py-1.5 text-xs font-bold uppercase tracking-widest font-mono rounded-none border",
+                      statsPeriod === 'all' ? "bg-stone-900 text-stone-50 border-stone-900" : "bg-white text-stone-500 border-stone-300 hover:border-stone-900"
+                    )}>All Time</button>
+                  </div>
+                </div>
+
                 {/* Top Stats */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <StatCard 
-                title="Total Balance" 
-                amount={`IDR ${balance.toLocaleString()}`} 
-                trend="" 
-                isPositive={balance >= 0} 
+              <StatCard
+                title="Total Balance"
+                amount={`IDR ${balance.toLocaleString()}`}
+                trend=""
+                isPositive={balance >= 0}
                 icon={<Wallet className="w-4 h-4" />}
                 iconColor="text-stone-900"
               />
-              <StatCard 
-                title="Total Income" 
-                amount={`IDR ${income.toLocaleString()}`} 
-                trend="" 
-                isPositive={true} 
+              <StatCard
+                title="Total Income"
+                amount={`IDR ${income.toLocaleString()}`}
+                trend=""
+                isPositive={true}
                 icon={<ArrowUpRight className="w-4 h-4" />}
-                iconColor="text-stone-500"
+                iconColor="text-green-600"
               />
-              <StatCard 
-                title="Total Expense" 
-                amount={`IDR ${expense.toLocaleString()}`} 
-                trend="" 
-                isPositive={false} 
+              <StatCard
+                title="Total Expense"
+                amount={`IDR ${expense.toLocaleString()}`}
+                trend=""
+                isPositive={false}
                 icon={<ArrowDownRight className="w-4 h-4" />}
-                iconColor="text-stone-500"
+                iconColor="text-red-600"
               />
             </div>
 
             {/* Analytics Section */}
             <div className="bg-white rounded-none border-2 border-stone-900 p-6 flex flex-col shadow-[4px_4px_0_0_rgba(28,25,23,1)]">
-              <h3 className="text-xs font-bold font-mono tracking-widest text-stone-500 uppercase mb-4">Income vs Expense (Last 7 Days)</h3>
+              <h3 className="text-xs font-bold font-mono tracking-widest text-stone-500 uppercase mb-4">Income vs Expense {statsPeriod === 'week' ? '(Last 7 Days)' : statsPeriod === 'month' ? '(This Month)' : '(All Time)'}</h3>
               <div className="h-64 w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={
@@ -520,9 +667,20 @@ export default function App() {
                     <YAxis tickLine={false} axisLine={false} tick={{fontSize: 12, fill: '#78716c'}} tickFormatter={(value) => `Rp${value}`} />
                     <RechartsTooltip cursor={{fill: '#f5f5f4'}} contentStyle={{borderRadius: '0', border: '1px solid #1c1917', boxShadow: '4px 4px 0 0 rgba(28,25,23,1)'}} />
                     <Bar dataKey="income" fill="#1c1917" radius={[2, 2, 0, 0]} barSize={32} />
-                    <Bar dataKey="expense" fill="#d6d3d1" radius={[2, 2, 0, 0]} barSize={32} />
+                    <Bar dataKey="expense" fill="#a8a29e" radius={[2, 2, 0, 0]} barSize={32} />
                   </BarChart>
                 </ResponsiveContainer>
+              </div>
+              {/* Legend */}
+              <div className="flex gap-6 mt-4 pt-4 border-t border-stone-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-stone-900"></div>
+                  <span className="text-xs font-mono text-stone-500 uppercase tracking-wider">Income</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-stone-400"></div>
+                  <span className="text-xs font-mono text-stone-500 uppercase tracking-wider">Expense</span>
+                </div>
               </div>
             </div>
 
@@ -671,32 +829,71 @@ export default function App() {
                     <Table>
                       <TableHeader className="bg-white sticky top-0 cursor-default">
                         <TableRow className="border-b-2 border-stone-900 hover:bg-transparent">
-                          <TableHead className="text-xs border-r-2 border-stone-900 font-bold tracking-wider text-stone-900 uppercase font-mono">Date</TableHead>
+                          <TableHead className="text-xs border-r-2 border-stone-900 font-bold tracking-wider text-stone-900 uppercase font-mono w-24">Date</TableHead>
                           <TableHead className="text-xs border-r-2 border-stone-900 font-bold tracking-wider text-stone-900 uppercase font-mono">Description</TableHead>
-                          <TableHead className="text-xs border-r-2 border-stone-900 font-bold tracking-wider text-stone-900 uppercase font-mono">Category</TableHead>
-                          <TableHead className="text-right text-xs font-bold tracking-wider text-stone-900 uppercase font-mono">Amount</TableHead>
+                          <TableHead className="text-xs border-r-2 border-stone-900 font-bold tracking-wider text-stone-900 uppercase font-mono w-28">Category</TableHead>
+                          <TableHead className="text-right text-xs font-bold tracking-wider text-stone-900 uppercase font-mono w-32">Amount</TableHead>
+                          <TableHead className="w-20 text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {filteredTransactions.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={4} className="h-24 text-center text-stone-500 font-mono text-sm">No transactions found.</TableCell>
+                            <TableCell colSpan={5} className="h-24 text-center text-stone-500 font-mono text-sm">No transactions found.</TableCell>
                           </TableRow>
                         ) : filteredTransactions.map((tx) => (
                           <TableRow key={tx.id} className="border-b border-stone-300 hover:bg-stone-50 transition-colors">
-                            <TableCell className="text-stone-500 border-r border-stone-300 whitespace-nowrap font-mono text-xs">{tx.date}</TableCell>
-                            <TableCell className="font-semibold border-r border-stone-300 text-stone-800 text-sm">{tx.desc}</TableCell>
-                            <TableCell className="border-r border-stone-300">
-                              <span className="inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-stone-100 text-stone-600 border border-stone-200">
-                                {tx.category}
-                              </span>
-                            </TableCell>
-                            <TableCell className={cn(
-                              "text-right font-mono font-medium whitespace-nowrap text-sm",
-                              tx.type === 'income' ? 'text-stone-900' : 'text-stone-500'
-                            )}>
-                              {tx.type === 'income' ? '' : '-'}IDR {Math.abs(tx.amount).toLocaleString('id-ID')}
-                            </TableCell>
+                            {editingTxId === tx.id ? (
+                              <>
+                                <TableCell className="border-r border-stone-300">{tx.date}</TableCell>
+                                <TableCell className="border-r border-stone-300">
+                                  <Input
+                                    value={editingTxForm.desc}
+                                    onChange={(e) => setEditingTxForm({...editingTxForm, desc: e.target.value})}
+                                    className="h-7 rounded-none border-stone-300 text-xs font-mono"
+                                  />
+                                </TableCell>
+                                <TableCell className="border-r border-stone-300">
+                                  <Input
+                                    value={editingTxForm.category}
+                                    onChange={(e) => setEditingTxForm({...editingTxForm, category: e.target.value})}
+                                    className="h-7 rounded-none border-stone-300 text-xs font-mono"
+                                  />
+                                </TableCell>
+                                <TableCell className="border-r border-stone-300">
+                                  <Input
+                                    type="number"
+                                    value={editingTxForm.amount}
+                                    onChange={(e) => setEditingTxForm({...editingTxForm, amount: e.target.value})}
+                                    className="h-7 rounded-none border-stone-300 text-xs font-mono"
+                                  />
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <button onClick={handleUpdateTransaction} className="p-1 text-green-600 hover:text-green-800"><Check className="w-4 h-4"/></button>
+                                  <button onClick={() => setEditingTxId(null)} className="p-1 text-stone-400 hover:text-stone-600"><X className="w-4 h-4"/></button>
+                                </TableCell>
+                              </>
+                            ) : (
+                              <>
+                                <TableCell className="text-stone-500 border-r border-stone-300 whitespace-nowrap font-mono text-xs">{tx.date}</TableCell>
+                                <TableCell className="font-semibold border-r border-stone-300 text-stone-800 text-sm">{tx.desc}</TableCell>
+                                <TableCell className="border-r border-stone-300">
+                                  <span className="inline-flex items-center px-2 py-1 rounded-sm text-[10px] font-bold uppercase tracking-widest bg-stone-100 text-stone-600 border border-stone-200">
+                                    {tx.category}
+                                  </span>
+                                </TableCell>
+                                <TableCell className={cn(
+                                  "text-right font-mono font-medium whitespace-nowrap text-sm",
+                                  tx.type === 'income' ? 'text-stone-900' : 'text-stone-500'
+                                )}>
+                                  {tx.type === 'income' ? '+' : '-'}IDR {Math.abs(tx.amount).toLocaleString('id-ID')}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <button onClick={() => handleEditTransaction(tx)} className="p-1 text-stone-400 hover:text-stone-900"><Edit2 className="w-4 h-4"/></button>
+                                  <button onClick={() => handleDeleteTransaction(tx.id)} className="p-1 text-stone-400 hover:text-red-600"><Trash2 className="w-4 h-4"/></button>
+                                </TableCell>
+                              </>
+                            )}
                           </TableRow>
                         ))}
                       </TableBody>
@@ -858,12 +1055,26 @@ export default function App() {
                 </Button>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {reminders.map(reminder => (
-                   <div 
-                     key={reminder.id} 
+                {reminders.length === 0 ? (
+                  <div className="col-span-full text-center py-12">
+                    <Bell className="w-12 h-12 text-stone-300 mx-auto mb-4" />
+                    <p className="font-mono text-sm text-stone-500 uppercase tracking-widest">No reminders yet</p>
+                    <p className="text-xs text-stone-400 mt-2">Click "Add Reminder" to create your first reminder</p>
+                  </div>
+                ) : reminders.map(reminder => (
+                   <div
+                     key={reminder.id}
                      onClick={() => handleOpenEditReminder(reminder)}
                      className="bg-white border-2 border-stone-900 shadow-[4px_4px_0_0_rgba(28,25,23,1)] p-6 flex flex-col group relative overflow-hidden cursor-pointer hover:shadow-[8px_8px_0_0_rgba(28,25,23,1)] hover:-translate-y-1 transition-all"
                    >
+                      {/* Delete Button */}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDeleteReminder(reminder.id); }}
+                        className="absolute top-4 right-4 p-1.5 bg-stone-100 hover:bg-red-100 text-stone-400 hover:text-red-600 transition-colors z-10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+
                       <div className="flex items-center justify-between mb-6">
                         <div className="w-12 h-12 bg-stone-100 border border-stone-200 flex items-center justify-center rounded-sm">
                            <Bell className="w-5 h-5 text-stone-900" />
@@ -878,7 +1089,7 @@ export default function App() {
                         <div className="text-[11px] font-bold font-mono uppercase tracking-widest text-stone-400">
                            Next due: <span className="text-stone-900">{reminder.nextDate.toLocaleDateString()}</span>
                         </div>
-                        <span className="w-2 h-2 rounded-none bg-amber-500 animate-pulse"></span>
+                        <span className={cn("w-2 h-2 rounded-none", reminder.isActive ? "bg-green-500 animate-pulse" : "bg-stone-300")}></span>
                       </div>
                    </div>
                 ))}
@@ -891,7 +1102,36 @@ export default function App() {
               <div className="border-b-2 border-stone-900 pb-4">
                 <h2 className="text-xl font-bold font-mono tracking-widest text-stone-900 uppercase">Settings</h2>
               </div>
-              
+
+              {/* Telegram Status Card */}
+              <div className="bg-white border-2 border-stone-900 shadow-[4px_4px_0_0_rgba(28,25,23,1)] p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={cn(
+                      "w-3 h-3 rounded-full",
+                      telegramChatId ? "bg-green-500 animate-pulse" : "bg-stone-300"
+                    )} />
+                    <div>
+                      <p className="font-bold font-mono text-sm uppercase tracking-wider">
+                        Telegram Integration
+                      </p>
+                      <p className="text-xs text-stone-500 font-mono">
+                        {telegramChatId
+                          ? `Connected (Chat ID: ${telegramChatId})`
+                          : 'Not connected'
+                        }
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    to="/guide"
+                    className="text-xs font-bold font-mono uppercase tracking-wider text-stone-500 hover:text-stone-900 underline"
+                  >
+                    Setup Guide
+                  </Link>
+                </div>
+              </div>
+
               <div className="bg-white border-2 border-stone-900 shadow-[4px_4px_0_0_rgba(28,25,23,1)] p-8 space-y-10">
                  <div>
                    <h3 className="text-sm font-bold font-mono tracking-widest text-stone-400 uppercase mb-6 pb-2 border-b border-stone-100">Profile Configuration</h3>
@@ -902,7 +1142,7 @@ export default function App() {
                       </div>
                       <div className="max-w-md">
                         <Label className="text-xs font-bold uppercase tracking-wider text-stone-500">Email Address</Label>
-                        <Input className="mt-1.5 rounded-none border-stone-300 focus-visible:ring-stone-900 font-mono text-sm" defaultValue="johndoe@example.com" />
+                        <Input className="mt-1.5 rounded-none border-stone-300 focus-visible:ring-stone-900 font-mono text-sm" defaultValue={user?.email || ''} />
                       </div>
                    </div>
                  </div>

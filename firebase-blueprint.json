@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the Equilibria application",
+      "type": "object",
+      "properties": {
+        "telegramChatId": { "type": "string", "description": "The connected telegram chat ID" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      }
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A financial transaction",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "desc": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "date": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "desc", "category", "amount", "date", "type", "createdAt"]
+    },
+    "Reminder": {
+      "title": "Reminder",
+      "description": "A financial reminder/bill",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "amount": { "type": "number" },
+        "frequency": { "type": "string" },
+        "nextDate": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "title", "amount", "frequency", "nextDate", "isActive", "createdAt"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Custom transaction category",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["income", "expense"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "name", "type", "createdAt"]
+    },
+    "Budget": {
+      "title": "Budget",
+      "description": "Monthly budget limit",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "category": { "type": "string" },
+        "amount": { "type": "number" },
+        "month": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "category", "amount", "month", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "transactions/{transactionId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "User transactions"
+    },
+    "reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/Reminder" },
+      "description": "User reminders"
+    },
+    "categories/{categoryId}": {
+      "schema": { "$ref": "#/entities/Category" },
+      "description": "User custom categories"
+    },
+    "budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/Budget" },
+      "description": "User monthly budgets"
+    }
+  }
+}

@@ -5,7 +5,7 @@ import { createServer as createViteServer } from 'vite';
 import { Telegraf } from 'telegraf';
 import { GoogleGenAI } from '@google/genai';
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import fs from 'fs';
 
 // ============================================================
@@ -22,7 +22,6 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
-  keyGenerator: (req) => req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
 });
 
 /**
@@ -35,7 +34,6 @@ const strictLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Rate limit exceeded for this endpoint.' },
-  keyGenerator: (req) => req.ip || req.headers['x-forwarded-for']?.toString() || 'unknown',
 });
 
 /**
@@ -47,12 +45,7 @@ const telegramLimiter = rateLimit({
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => {
-    // Use chat ID from Telegram update if available
-    const chatId = (req.body as any)?.message?.chat?.id?.toString();
-    return chatId || req.ip || 'unknown';
-  },
-  message: '⚠️ Please wait a moment before sending another message.',
+  message: 'Please wait a moment before sending another message.',
 });
 
 // ============================================================
@@ -106,10 +99,8 @@ let bot: Telegraf | null = null;
 
 if (botToken) {
   try {
-    bot = new Telegraf(botToken, {
-      telegram: { uploadTimeout: 30000 }
-    });
-    
+    bot = new Telegraf(botToken);
+
     bot.start((ctx) => {
       const chatId = ctx.message.chat.id;
       ctx.reply(`Welcome to Equilibria! Your Chat ID is: ${chatId}\n\nEnter this ID in your Equilibria Settings page to verify your Telegram account.`);
@@ -127,7 +118,7 @@ if (botToken) {
 /history - View recent transactions
 
 To record a transaction simply type the amount and description.
-Example: 
+Example:
 50000 Nasi Goreng
 income 2000000 Salary
 `);
@@ -144,24 +135,24 @@ income 2000000 Salary
           return ctx.reply('Your Telegram account is not linked to any Equilibria account. Please enter your Chat ID in the app settings.');
         }
         const userDoc = usersSnapshot.docs[0];
-        
+
         const txSnapshot = await db.collection('transactions')
             .where('userId', '==', userDoc.id)
             .orderBy('createdAt', 'desc')
             .limit(5)
             .get();
-        
+
         if (txSnapshot.empty) {
             return ctx.reply('You have no recent transactions recorded.');
         }
 
-        let historyMsg = `📋 Recent Transactions:\n`;
+        let historyMsg = `Recent Transactions:\n`;
         txSnapshot.docs.forEach((doc, idx) => {
             const data = doc.data();
             const sign = data.type === 'income' ? '+' : '-';
             historyMsg += `${idx + 1}. ${sign}Rp ${data.amount.toLocaleString()} (${data.desc})\n`;
         });
-        
+
         ctx.reply(historyMsg);
       } catch (error) {
         console.error('Error fetching history:', error);
@@ -173,23 +164,23 @@ income 2000000 Salary
       try {
         const text = ctx.message.text.toLowerCase();
         if (text.startsWith('/start') || text.startsWith('/status') || text.startsWith('/help') || text.startsWith('/history')) return;
-        
+
         if (!db) {
           return ctx.reply('Database is not connected yet.');
         }
 
         const chatId = ctx.message.chat.id.toString();
         const usersSnapshot = await db.collection('users').where('telegramChatId', '==', chatId).limit(1).get();
-        
+
         if (usersSnapshot.empty) {
-          return ctx.reply(`⚠️ Your Telegram account is not yet linked.\n\nYour Chat ID is: ${chatId}\n\nPlease enter this in your Equilibria app settings.`);
+          return ctx.reply(`Your Telegram account is not yet linked.\n\nYour Chat ID is: ${chatId}\n\nPlease enter this in your Equilibria app settings.`);
         }
         const userDoc = usersSnapshot.docs[0];
 
         // Parse format: `[income] <amount> <desc>`
         const parts = ctx.message.text.split(' ');
         if (parts.length < 2) {
-            return ctx.reply('⚠️ Invalid format. Example: "50000 Nasi Goreng" or "income 2000000 Salary"');
+            return ctx.reply('Invalid format. Example: "50000 Nasi Goreng" or "income 2000000 Salary"');
         }
 
         let type = 'expense';
@@ -198,14 +189,14 @@ income 2000000 Salary
 
         if (parts[0].toLowerCase() === 'income') {
              if (parts.length < 3) {
-                 return ctx.reply('⚠️ Invalid format for income. Example: "income 2000000 Salary"');
+                 return ctx.reply('Invalid format for income. Example: "income 2000000 Salary"');
              }
              type = 'income';
              amountStr = parts[1];
              descParts = parts.slice(2);
         } else if (parts[0].toLowerCase() === 'expense') {
              if (parts.length < 3) {
-                 return ctx.reply('⚠️ Invalid format for expense. Example: "expense 50000 Nasi Goreng"');
+                 return ctx.reply('Invalid format for expense. Example: "expense 50000 Nasi Goreng"');
              }
              type = 'expense';
              amountStr = parts[1];
@@ -214,11 +205,11 @@ income 2000000 Salary
 
         const amount = Number(amountStr.replace(/[^0-9]/g, ''));
         if (isNaN(amount) || amount <= 0) {
-            return ctx.reply('⚠️ Invalid amount. Please provide a valid positive number.');
+            return ctx.reply('Invalid amount. Please provide a valid positive number.');
         }
 
         const desc = descParts.join(' ');
-        
+
         const now = new Date();
         const yyyy = now.getFullYear();
         const mm = String(now.getMonth() + 1).padStart(2, '0');
@@ -237,8 +228,8 @@ income 2000000 Salary
 
         const docRef = db.collection('transactions').doc();
         await docRef.set(txData);
-        
-        await ctx.reply(`✅ Transaction Recorded!\n\nType: ${type.toUpperCase()}\nAmount: Rp ${amount.toLocaleString()}\nDesc: ${desc}\n\nThis is now synced with your Equilibria app.`);
+
+        await ctx.reply(`Transaction Recorded!\n\nType: ${type.toUpperCase()}\nAmount: Rp ${amount.toLocaleString()}\nDesc: ${desc}\n\nThis is now synced with your Equilibria app.`);
       } catch (error) {
         console.error('Error processing text message:', error);
         await ctx.reply('An unexpected error occurred. Please try again later.');
@@ -253,11 +244,11 @@ income 2000000 Salary
         const chatId = ctx.message.chat.id.toString();
         const usersSnapshot = await db.collection('users').where('telegramChatId', '==', chatId).limit(1).get();
         if (usersSnapshot.empty) {
-          return ctx.reply('⚠️ Your Telegram account is not linked.');
+          return ctx.reply('Your Telegram account is not linked.');
         }
         const userDoc = usersSnapshot.docs[0];
 
-        await ctx.reply('⏳ Analyzing your input with AI...');
+        await ctx.reply('Analyzing your input with AI...');
 
         const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
         let fileId = '';
@@ -292,17 +283,17 @@ income 2000000 Salary
            ]
         });
 
-        const textResponse = result.text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const textResponse = (result.text || '').replace(/```json/g, '').replace(/```/g, '').trim();
         let parsed;
         try {
           parsed = JSON.parse(textResponse);
         } catch(e) {
           console.error("AI JSON Parse Error: ", textResponse);
-          return ctx.reply('⚠️ Sorry, the AI could not understand the transaction details properly.');
+          return ctx.reply('Sorry, the AI could not understand the transaction details properly.');
         }
 
         if (!parsed.amount || !parsed.type || !parsed.desc || !parsed.category) {
-            return ctx.reply('⚠️ AI missed some fields. Please try again.');
+            return ctx.reply('AI missed some fields. Please try again.');
         }
 
         const type = parsed.type.toLowerCase() === 'income' ? 'income' : 'expense';
@@ -325,8 +316,8 @@ income 2000000 Salary
 
         const docRef = db.collection('transactions').doc();
         await docRef.set(txData);
-        
-        await ctx.reply(`🤖 AI Transaction Recorded!\n\nType: ${type.toUpperCase()}\nAmount: Rp ${amount.toLocaleString()}\nDesc: ${desc}\nCategory: ${category}\n\nThis is now synced with your Equilibria app.`);
+
+        await ctx.reply(`AI Transaction Recorded!\n\nType: ${type.toUpperCase()}\nAmount: Rp ${amount.toLocaleString()}\nDesc: ${desc}\nCategory: ${category}\n\nThis is now synced with your Equilibria app.`);
 
       } catch (error) {
         console.error('Error in multi-modal bot handler:', error);
@@ -382,7 +373,7 @@ async function startServer() {
 
   app.post('/api/telegram/verify', async (req, res) => {
     const { chatId } = req.body;
-    
+
     if (!chatId) {
       return res.status(400).json({ success: false, error: 'Chat ID is required' });
     }
@@ -393,7 +384,7 @@ async function startServer() {
 
     try {
       // Send a test message to verify the chat ID
-      await bot.telegram.sendMessage(chatId, '✅ Success! Your Telegram account has been linked to your Equilibria app.');
+      await bot.telegram.sendMessage(chatId, 'Success! Your Telegram account has been linked to your Equilibria app.');
       res.json({ success: true, message: 'Verification successful' });
     } catch (error: any) {
       console.error('Verification failed:', error);
@@ -403,9 +394,6 @@ async function startServer() {
 
   // Cron Job endpoint for Reminders
   app.get('/api/cron/reminders', async (req, res) => {
-    // You could require an Authorization header here if needed, 
-    // e.g. checking Bearer <CRON_SECRET>
-
     if (!db || !bot) {
       return res.status(500).json({ error: 'Database or Bot not configured' });
     }
@@ -415,7 +403,7 @@ async function startServer() {
       const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
       console.log(`[CRON] Checking for reminders on or before ${todayStr}...`);
-      
+
       const remindersSnapshot = await db.collection('reminders')
         .where('isActive', '==', true)
         .where('nextDate', '<=', todayStr)
@@ -426,23 +414,23 @@ async function startServer() {
       }
 
       let processedCount = 0;
-      
+
       for (const doc of remindersSnapshot.docs) {
         const reminder = doc.data();
-        
+
         // Lookup user to get telegramChatId
         const userDoc = await db.collection('users').doc(reminder.userId).get();
         if (userDoc.exists) {
           const userData = userDoc.data();
           if (userData && userData.telegramChatId) {
             try {
-              let msg = `🔔 *Finance Reminder*\n\n`;
-              msg += `*${reminder.title}*\n`;
+              let msg = `Finance Reminder\n\n`;
+              msg += `${reminder.title}\n`;
               msg += `Amount: Rp ${reminder.amount.toLocaleString()}\n`;
               if (reminder.frequency !== 'once') {
                  msg += `Frequency: ${reminder.frequency}\n`;
               }
-              
+
               await bot.telegram.sendMessage(userData.telegramChatId, msg, { parse_mode: 'Markdown' });
             } catch (err) {
               console.error(`Failed to send reminder to ${userData.telegramChatId}:`, err);
@@ -462,7 +450,7 @@ async function startServer() {
            else if (reminder.frequency === 'weekly') nextObj.setDate(nextObj.getDate() + 7);
            else if (reminder.frequency === 'monthly') nextObj.setMonth(nextObj.getMonth() + 1);
            else if (reminder.frequency === 'yearly') nextObj.setFullYear(nextObj.getFullYear() + 1);
-           
+
            nextDateStr = `${nextObj.getFullYear()}-${String(nextObj.getMonth()+1).padStart(2, '0')}-${String(nextObj.getDate()).padStart(2, '0')}`;
         }
 
@@ -482,13 +470,17 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== 'production') {
+  // Vite middleware for development (always use dev mode since we can't easily set NODE_ENV on Windows)
+  if (true) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
+    // Fallback: serve index.html for root path
+    app.use('*', (req, res) => {
+      res.sendFile(path.join(process.cwd(), 'index.html'));
+    });
   } else {
     // Serve static files in production
     const distPath = path.join(process.cwd(), 'dist');

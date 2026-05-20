@@ -7,7 +7,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-// Firebase configuration - loaded from environment or defaults
+// Firebase configuration
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || 'AIzaSyDdR8xcaWGqQ-9ElIWJpeiNUSXky-98a40',
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || 'my-project-7725-1741684398090.firebaseapp.com',
